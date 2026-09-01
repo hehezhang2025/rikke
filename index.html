@@ -129,6 +129,29 @@ header{
 .empty .ico{font-size:34px;margin-bottom:10px;opacity:.5}
 .empty p{margin:0;font-size:14px;line-height:1.8}
 
+/* ---------- 今日一问（选择题） ---------- */
+.qbar{height:4px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-bottom:11px}
+.qbar i{display:block;height:100%;background:var(--accent);border-radius:4px;transition:width .32s ease}
+.qstep{font-size:11.5px;color:var(--text3);letter-spacing:.6px;margin-bottom:6px;font-weight:600}
+.qtitle{font-size:16.5px;font-weight:600;line-height:1.55;margin-bottom:3px}
+.qsub{font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.5}
+.opts{display:flex;flex-direction:column;gap:8px}
+.opt{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  padding:11px 13px;border:1px solid var(--border);background:var(--surface2);
+  border-radius:var(--radius-s);font-size:14.5px;line-height:1.45;transition:.15s}
+.opt:active{transform:scale(.985)}
+.opt.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-deep);font-weight:600}
+.opt .em{font-size:17px;flex-shrink:0;line-height:1}
+.opt .ck{margin-left:auto;font-size:13px;color:var(--accent);opacity:0;font-weight:700}
+.opt.on .ck{opacity:1}
+.qnav{display:flex;align-items:center;gap:9px;margin-top:13px}
+.qnav .btn{flex:1}
+.qnote{width:100%;margin-top:12px;padding:10px 11px;border:1px solid var(--border);
+  background:var(--surface2);border-radius:var(--radius-s);font-size:14px;resize:vertical;min-height:62px}
+.qnote:focus{outline:none;border-color:var(--accent);background:var(--surface)}
+.qdone{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--text2)}
+.qdone .em{font-size:19px}
+
 /* ---------- weekly ---------- */
 .wnav{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}
 .wnav .t{font-size:15px;font-weight:600}
@@ -224,6 +247,11 @@ nav{position:fixed;left:0;right:0;bottom:0;z-index:60;background:rgba(255,255,25
 <!-- ============ 记录 ============ -->
 <section id="view-log" data-page-node-id="1PKQxWxegWJHF8ngRugGW3">
   <div id="replySlot" data-page-node-id="QqZKgNu1aXRa2Mk2JTliqa"></div>
+
+  <div class="card tight" id="quizCard" data-page-node-id="qzK4rD8vTn2Mh5YwB6sL1p">
+    <div class="sec-title" data-page-node-id="qzT7yH2nP9wR4vKc1XdM3q">今日一问</div>
+    <div id="quizBody" data-page-node-id="qzB5nQ8sV3jL6tWy9ZfA2h"></div>
+  </div>
 
   <div class="card" data-page-node-id="GAbJ3IO7AtAcMKdNFHeY1G">
     <div class="chips" id="chips" data-page-node-id="CKaDOefYw2L14nWg0By14Q">
@@ -766,7 +794,9 @@ function renderHeader(){
   const n=ENTRIES.filter(e=>e.date===todayStr()).length;
   $('#count').textContent='今天已记 '+n+' 条';
   const h=new Date().getHours();
-  $('#hdSub').textContent = h<6?'半夜了，还不睡？':h<11?'早上好，说说昨晚和今早':h<14?'中午吃了什么？':h<19?'下午状态怎么样':h<23?'今天过得如何':'今天该收尾了';
+  let sub = h<6?'半夜了，还不睡？':h<11?'早上好，说说昨晚和今早':h<14?'中午吃了什么？':h<19?'下午状态怎么样':h<23?'今天过得如何':'今天该收尾了';
+  if(QUIZ&&QUIZ.date===todayStr()&&!QUIZ.done&&h>=20) sub='今天还没打卡，点几下就完事';
+  $('#hdSub').textContent = sub;
 }
 
 function renderTags(p){
@@ -1116,7 +1146,201 @@ function renderMe(){
   renderRemind();
 }
 
-function renderAll(){renderHeader();renderToday();renderTimeline();renderWeek();renderMe()}
+function renderAll(){renderHeader();renderToday();renderTimeline();renderWeek();renderMe();renderQuiz()}
+
+/* ==========================================================
+   3.5 今日一问：每天几道选择题，一步步点完
+   选择题的结果直接写进结构化字段，比解析自然语言更准
+   ========================================================== */
+const K_QUIZ='rikke_quiz_v1';
+
+const Q_OVERALL={k:'overall',q:'今天整体过得怎么样？',sub:'先给今天定个调，跟着第一反应走',opts:[
+  {v:'bad',em:'😮‍💨',t:'挺糟糕的',txt:'今天挺糟糕',m:-1.6},
+  {v:'tired',em:'😪',t:'有点累',txt:'今天有点累',m:-0.8},
+  {v:'soso',em:'😐',t:'一般般',txt:'今天一般般',m:0},
+  {v:'ok',em:'🙂',t:'还不错',txt:'今天还不错',m:0.9},
+  {v:'good',em:'😄',t:'挺好的',txt:'今天挺好的',m:1.5}
+]};
+const Q_MOOD={k:'mood',q:'现在的心情更接近哪个？',sub:'不用精确，哪个像就点哪个',opts:[
+  {v:'anx',em:'😖',t:'烦躁、焦虑',txt:'有点焦虑',m:-0.4},
+  {v:'low',em:'😔',t:'低落、没劲儿',txt:'有点低落',m:-0.4},
+  {v:'flat',em:'😶',t:'平静，没什么起伏',txt:'心情比较平静',m:0.1},
+  {v:'easy',em:'😌',t:'轻松、放松',txt:'心情放松',m:0.4},
+  {v:'odd',em:'🫤',t:'说不上来的别扭',txt:'说不上来，有点别扭',m:-0.2}
+]};
+const Q_SLEEP={k:'sleep',q:'昨晚睡得怎么样？',sub:'挑最贴近的那个就行',opts:[
+  {v:'s4',em:'😴',t:'睡得挺好（7 小时以上）',txt:'昨晚睡得挺好，睡了7.5小时',h:7.5,sq:4.5},
+  {v:'s3',em:'🙂',t:'还行（6~7 小时）',txt:'昨晚睡得还行，睡了6.5小时',h:6.5,sq:3.5},
+  {v:'s2',em:'😕',t:'不太够（5~6 小时）',txt:'昨晚睡得不太够，只睡了5.5小时',h:5.5,sq:2.5},
+  {v:'s1',em:'🥴',t:'很差（不到 5 小时）',txt:'昨晚没睡好，只睡了4.5小时',h:4.5,sq:1.5},
+  {v:'s0',em:'🦉',t:'熬夜了',txt:'昨晚熬夜了',h:null,sq:2}
+]};
+const Q_SPORT={k:'sport',q:'今天动了吗？',sub:'走路、做家务都算',opts:[
+  {v:'no',em:'🛋️',t:'基本没动',txt:'今天没怎么动',sp:null},
+  {v:'walk',em:'🚶',t:'走了走 / 散了会儿步',txt:'今天散了会儿步',sp:{kinds:['散步'],dur:20,intensity:1}},
+  {v:'sweat',em:'🏃',t:'跑步或健身，出汗了',txt:'今天运动了30分钟，出了汗',sp:{kinds:['有氧'],dur:30,intensity:2}},
+  {v:'stretch',em:'🧘',t:'拉伸 / 放松了一下',txt:'今天拉伸放松了一下',sp:{kinds:['拉伸'],dur:15,intensity:1}}
+]};
+const Q_FOOD={k:'food',q:'今天吃的方面，哪些说中了？',sub:'可以多选，没有就点最后一项',multi:true,opts:[
+  {v:'oil',em:'🍗',t:'外卖 / 重口 / 油炸',txt:'吃了外卖，口味偏重',f:{oil:1}},
+  {v:'sugar',em:'🧋',t:'奶茶 / 甜食',txt:'喝了奶茶',f:{sugar:1}},
+  {v:'stim',em:'☕',t:'咖啡 / 浓茶',txt:'喝了咖啡',f:{stim:1}},
+  {v:'over',em:'🤰',t:'吃撑了',txt:'吃撑了',f:{over:1}},
+  {v:'lack',em:'🍽️',t:'没好好吃 / 对付了一口',txt:'没好好吃饭',f:{lack:1}},
+  {v:'good',em:'🥗',t:'清淡均衡，吃得不错',txt:'吃得比较清淡均衡',f:{good:1}},
+  {v:'body',em:'🤢',t:'胃胀 / 犯困 / 身体不舒服',txt:'吃完有点胃不舒服、犯困',f:{body:-1}},
+  {v:'none',em:'➖',t:'没有特别的',txt:'',f:null}
+]};
+
+/* 轮换题：每天换一道，不至于天天问一样的 */
+const Q_ROTATE=[
+ {k:'drain',q:'今天最耗神的是什么？',sub:'找出来，才好往下卸',opts:[
+   {v:'work',em:'💼',t:'工作上的事',txt:'主要是工作的事压着',st:['工作']},
+   {v:'family',em:'🏠',t:'家里的事',txt:'主要是家里的事',st:['家庭']},
+   {v:'self',em:'🪞',t:'对自己的要求',txt:'主要是对自己的要求',m:-0.2},
+   {v:'vague',em:'🌫️',t:'说不清，就是累',txt:'说不清，就是累'}
+ ]},
+ {k:'joy',q:'今天有没有一件还不错的小事？',sub:'好状态同样值得被看见',opts:[
+   {v:'yes',em:'✨',t:'有，想得起来',txt:'今天有一件还不错的小事',m:0.3},
+   {v:'maybe',em:'🤔',t:'好像有，但说不上来',txt:'好像有一件还不错的事',m:0.1},
+   {v:'no',em:'🫥',t:'好像没有',txt:'今天好像没什么值得说的事',m:-0.2},
+   {v:'nc',em:'👀',t:'没留意',txt:''}
+ ]},
+ {k:'bodyq',q:'身体今天有没有闹点小情绪？',sub:'胃、头、全天精力都算',opts:[
+   {v:'head',em:'🤕',t:'头疼 / 头晕',txt:'今天有点头疼',f:{body:-1}},
+   {v:'stom',em:'🥴',t:'胃不舒服 / 胀气',txt:'今天胃不太舒服',f:{body:-1}},
+   {v:'sleepy',em:'😵‍💫',t:'一直犯困',txt:'今天一直犯困',m:-0.2},
+   {v:'fine',em:'💪',t:'还行，没什么',txt:''}
+ ]},
+ {k:'social',q:'今天跟人打交道的感觉是？',sub:'社交到底是耗电还是充电，差别挺大',opts:[
+   {v:'drain',em:'🔋',t:'在耗电，想躲一会儿',txt:'今天跟人打交道挺耗电的',m:-0.3},
+   {v:'charge',em:'🔌',t:'还挺充电的',txt:'今天跟人聊得还挺充电的',m:0.3},
+   {v:'mix',em:'🔄',t:'一半一半',txt:'今天跟人打交道一半一半'},
+   {v:'none',em:'🧍',t:'基本没怎么说话',txt:''}
+ ]},
+ {k:'tomorrow',q:'明天有没有一件你有点犯怵的事？',sub:'提前说出来，它的体积会小一号',opts:[
+   {v:'work',em:'📌',t:'有，工作上有个坎',txt:'明天有件工作上的事有点犯怵',st:['工作'],m:-0.2},
+   {v:'people',em:'🗣️',t:'有，要面对某个人',txt:'明天要面对某个人，有点犯怵',m:-0.2},
+   {v:'no',em:'🌤️',t:'没有，挺平的',txt:'明天没什么犯怵的'},
+   {v:'nc',em:'👀',t:'还没想过',txt:''}
+ ]}
+];
+
+function quizToday(){
+  const seed=Math.round(parseD(todayStr()).getTime()/864e5);
+  const rot=Q_ROTATE[((seed%Q_ROTATE.length)+Q_ROTATE.length)%Q_ROTATE.length];
+  return [Q_OVERALL,Q_MOOD,Q_SLEEP,rot,Q_SPORT,Q_FOOD];
+}
+function loadQuiz(){
+  try{const q=JSON.parse(localStorage.getItem(K_QUIZ)||'null');if(q&&q.date===todayStr())return q}catch(e){}
+  return {date:todayStr(),step:0,ans:{},done:false,ts:null};
+}
+function saveQuiz(){ try{localStorage.setItem(K_QUIZ,JSON.stringify(QUIZ))}catch(e){} }
+let QUIZ=loadQuiz();
+
+function renderQuiz(){
+  const box=$('#quizBody'); if(!box) return;
+  const qs=quizToday();
+
+  if(QUIZ.done){
+    const tm=QUIZ.ts?new Date(QUIZ.ts).toTimeString().slice(0,5):'';
+    box.innerHTML='<div class="qdone"><span class="em">✅</span><span>今天的打卡完成了'+(tm?'（'+tm+'）':'')+'。还想补什么，直接在下面说。</span></div>'
+      +'<div class="qnav"><button class="btn ghost sm" id="qRedo">重新答一遍</button></div>';
+    $('#qRedo').onclick=()=>{QUIZ={date:todayStr(),step:0,ans:{},done:false,ts:null};saveQuiz();renderQuiz()};
+    return;
+  }
+
+  if(QUIZ.step>=qs.length){ renderQuizNote(qs.length); return; }
+
+  const i=QUIZ.step, q=qs[i], sel=QUIZ.ans[q.k]||[];
+  let h='<div class="qbar"><i style="width:'+Math.round(i/qs.length*100)+'%"></i></div>'
+       +'<div class="qstep">第 '+(i+1)+' / '+qs.length+' 题'+(q.multi?' · 可多选':'')+'</div>'
+       +'<div class="qtitle">'+esc(q.q)+'</div>'
+       +'<div class="qsub">'+esc(q.sub||'')+'</div><div class="opts">';
+  q.opts.forEach(o=>{
+    h+='<button class="opt'+(sel.indexOf(o.v)>-1?' on':'')+'" data-v="'+o.v+'">'
+      +'<span class="em">'+o.em+'</span><span>'+esc(o.t)+'</span><span class="ck">✓</span></button>';
+  });
+  h+='</div><div class="qnav">'
+    +(i>0?'<button class="btn ghost sm" id="qPrev">上一题</button>':'<button class="btn ghost sm" id="qSkip">跳过</button>')
+    +(q.multi?'<button class="btn" id="qNext">下一题</button>':'')+'</div>';
+  box.innerHTML=h;
+
+  const go=n=>{QUIZ.step=clamp(n,0,qs.length);saveQuiz();renderQuiz()};
+  if(i>0) $('#qPrev').onclick=()=>go(i-1); else $('#qSkip').onclick=()=>go(i+1);
+  if(q.multi) $('#qNext').onclick=()=>go(i+1);
+
+  $$('#quizBody .opt').forEach(b=>b.onclick=()=>{
+    const v=b.dataset.v;
+    if(q.multi){
+      let s=(QUIZ.ans[q.k]||[]).slice();
+      if(v==='none') s = s.indexOf('none')>-1?[]:['none'];
+      else if(s.indexOf(v)>-1) s.splice(s.indexOf(v),1);
+      else { s.push(v); s=s.filter(x=>x!=='none'); }
+      QUIZ.ans[q.k]=s; saveQuiz(); renderQuiz();
+    }else{
+      QUIZ.ans[q.k]=[v]; saveQuiz(); renderQuiz();
+      setTimeout(()=>go(i+1),280);
+    }
+  });
+}
+
+function renderQuizNote(total){
+  let h='<div class="qbar"><i style="width:100%"></i></div>'
+       +'<div class="qstep">最后一步</div>'
+       +'<div class="qtitle">还有想说的吗？可以不填</div>'
+       +'<div class="qsub">一句话也行。点「完成打卡」，我会按你今天答的这些回你一两句。</div>'
+       +'<textarea class="qnote" id="qNote" placeholder="比如：下午那个会开得有点闷，晚饭前出去走了走。"></textarea>'
+       +'<div class="qnav"><button class="btn ghost sm" id="qBackNote">上一题</button>'
+       +'<button class="btn" id="qFinish">完成打卡</button></div>';
+  $('#quizBody').innerHTML=h;
+  $('#qBackNote').onclick=()=>{QUIZ.step=total-1;saveQuiz();renderQuiz()};
+  $('#qFinish').onclick=finishQuiz;
+}
+
+function mergeFood(ov,f){
+  if(!ov.food) ov.food={sugar:0,oil:0,good:0,stim:0,over:0,lack:0,body:0};
+  Object.keys(f).forEach(k=>{ ov.food[k]=(ov.food[k]||0)+f[k] });
+}
+
+async function finishQuiz(){
+  const qs=quizToday();
+  const noteEl=$('#qNote'); const note=noteEl?noteEl.value.trim():'';
+  const btn=$('#qFinish'); if(btn){btn.disabled=true;btn.textContent='整理中…'}
+
+  const parts=[], ov={mood:null,sleep:null,sport:null,food:null,stress:[]};
+  let base=null, adj=0;
+  qs.forEach(q=>{
+    (QUIZ.ans[q.k]||[]).forEach(v=>{
+      const o=q.opts.find(x=>x.v===v); if(!o) return;
+      if(o.txt) parts.push(o.txt);
+      if(q.k==='overall') base=o.m;
+      else if(o.m!==undefined) adj+=o.m;
+      if(o.h!==undefined||o.sq!==undefined) ov.sleep={hours:(o.h===undefined?null:o.h),q:(o.sq===undefined?null:o.sq),bedtime:null};
+      if(o.sp!==undefined) ov.sport=o.sp;
+      if(o.f) mergeFood(ov,o.f);
+      if(o.st) ov.stress=ov.stress.concat(o.st);
+    });
+  });
+  if(base!==null) adj+=base;
+  else if(adj!==0) adj=adj;                       /* 只答了心情也给出参考值 */
+  if(ov.sleep&&ov.sleep.hours!==null&&ov.sleep.hours<6) adj-=0.3;
+  if(ov.sleep&&ov.sleep.q!==null&&ov.sleep.q<=2) adj-=0.2;
+  if(ov.sport) adj+=0.1;
+  if(adj!==0||base!==null) ov.mood=clamp(Math.round(adj*10)/10,-2,2);
+
+  let text=parts.join('，');
+  if(note) text += (text?'。':'')+note;
+  if(!text) text='今天做了打卡，没有补充。';
+  if(!/[。！？.!?]$/.test(text)) text+='。';
+
+  const entry=await buildEntry(text,[],ov,s=>{if(btn)btn.textContent=s});
+  entry.quiz=QUIZ.ans; save();
+  QUIZ.done=true; QUIZ.ts=Date.now(); saveQuiz();
+  renderQuiz(); refreshAfterEntry(entry);
+  toast('今天的打卡记好了');
+  $('#replySlot').scrollIntoView({behavior:'smooth',block:'center'});
+}
 
 /* ==========================================================
    4. 交互
@@ -1129,25 +1353,56 @@ $$('#chips .chip').forEach(b=>b.onclick=()=>{
   else{CUR_TAGS.push(t);b.classList.add('on')}
 });
 
+/* 把「选择题的答案」覆盖到解析结果上：选择题是比自然语言更准的结构化数据 */
+function applyQuiz(p,ov){
+  if(ov.mood!==null&&ov.mood!==undefined) p.mood=clamp(Math.round(ov.mood*10)/10,-2,2);
+  if(ov.sleep) p.sleep=ov.sleep;
+  if(ov.sport) p.sport=ov.sport;
+  if(ov.food){
+    const water=p.food&&p.food.water;
+    p.food=Object.assign({sugar:0,oil:0,good:0,stim:0,over:0,lack:0,body:0,items:[]},ov.food);
+    if(water) p.food.water=water;
+  }
+  if(ov.stress&&ov.stress.length) p.stress=Array.from(new Set((p.stress||[]).concat(ov.stress)));
+  const types=new Set(p.types);
+  if(p.sleep) types.add('sleep');
+  if(p.sport) types.add('sport');
+  if(p.food) types.add('food');
+  if(p.mood!==null) types.add('mood');
+  if(p.stress.indexOf('工作')>-1) types.add('work');
+  if(p.stress.indexOf('家庭')>-1) types.add('family');
+  p.types=Array.from(types);
+  return p;
+}
+
+/* 统一的入库管线：自然语言与选择题打卡共用 */
+async function buildEntry(text,tags,quiz,onStatus){
+  const p=analyze(text,tags);
+  if(quiz) applyQuiz(p,quiz);
+  const local=composeReply(p,text);
+  const entry={id:uid(),ts:Date.now(),date:todayStr(),text,...p,reply:local,ai:false};
+  if(quiz) entry.quiz=quiz;
+  if(SETTINGS.ai){
+    if(onStatus) onStatus('模型中…');
+    const r=await aiReply(text,p);
+    if(r){entry.reply=r;entry.ai=true}
+  }
+  ENTRIES.push(entry); save();
+  return entry;
+}
+function refreshAfterEntry(entry){
+  renderReply(entry); renderHeader(); renderToday(); renderTimeline(); renderWeek(); renderMe();
+}
+
 async function submit(){
   const ta=$('#input');
   const text=ta.value.trim();
   if(!text){toast('先说点什么吧');ta.focus();return}
   const btn=$('#saveBtn'); btn.disabled=true; btn.textContent='记录中…';
-  const p=analyze(text,CUR_TAGS);
-  const local=composeReply(p,text);
-  const entry={id:uid(),ts:Date.now(),date:todayStr(),text,...p,reply:local,ai:false};
-
-  let rep=local;
-  if(SETTINGS.ai){
-    btn.textContent='模型中…';
-    const r=await aiReply(text,p);
-    if(r){rep=r;entry.reply=r;entry.ai=true}
-  }
-  ENTRIES.push(entry); save();
+  const entry=await buildEntry(text,CUR_TAGS,null,s=>{btn.textContent=s});
   ta.value=''; CUR_TAGS=[]; $$('#chips .chip').forEach(x=>x.classList.remove('on'));
   btn.disabled=false; btn.textContent='记下来';
-  renderReply(entry); renderHeader(); renderToday(); renderTimeline(); renderWeek(); renderMe();
+  refreshAfterEntry(entry);
   $('#replySlot').scrollIntoView({behavior:'smooth',block:'center'});
 }
 $('#saveBtn').onclick=submit;
