@@ -1,5 +1,5 @@
 /* 日课 Service Worker —— 让 App 安装到桌面后离线可用 */
-const CACHE = 'rikke-v6';   /* 每次改动 index.html 记得 +1，否则手机上会一直用旧缓存 */
+const CACHE = 'rikke-v7';   /* 每次改动 index.html 记得 +1，否则手机上会一直用旧缓存 */
 const ASSETS = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {
@@ -25,13 +25,17 @@ self.addEventListener('fetch', e => {
   if (url.origin !== location.origin) return;   /* 只管自己的资源，不碰外部请求 */
 
   /* 页面：优先网络（保证能拿到新版本），断网时回退缓存 */
+  /* 注意：必须按各自 URL 分别缓存，不能一律写进 index.html——
+     否则访问 share.html 后会把分享页当成应用首页缓存，离线打开日课会显示错页面 */
   if (req.mode === 'navigate') {
     e.respondWith(
       fetch(req).then(r => {
         const copy = r.clone();
-        caches.open(CACHE).then(ch => ch.put('./index.html', copy)).catch(() => {});
+        caches.open(CACHE).then(ch => ch.put(req, copy)).catch(() => {});
         return r;
-      }).catch(() => caches.match('./index.html').then(r => r || caches.match('./')))
+      }).catch(() =>
+        caches.match(req).then(r => r || caches.match('./index.html').then(x => x || caches.match('./')))
+      )
     );
     return;
   }
