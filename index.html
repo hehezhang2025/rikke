@@ -221,6 +221,18 @@ nav{position:fixed;left:0;right:0;bottom:0;z-index:60;background:rgba(255,255,25
   z-index:200;opacity:0;transition:.25s;pointer-events:none;white-space:nowrap}
 .toast.on{opacity:1;transform:translateX(-50%)}
 
+/* 同步状态灯：一眼看出云端通没通，不用点按钮去试 */
+.sync-dot{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;
+  padding:2px 9px;border-radius:11px;line-height:1.7}
+.sync-dot::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
+.sync-dot.ok{color:#2f7a4d;background:rgba(47,122,77,.1)}
+.sync-dot.ing{color:#8a6d1f;background:rgba(138,109,31,.12)}
+.sync-dot.pending{color:#b8541f;background:rgba(184,84,31,.12)}
+.sync-dot.fail{color:var(--warn);background:rgba(200,80,60,.1)}
+.sync-dot.off{color:var(--text3);background:var(--surface2)}
+.sync-dot.ing::before{animation:syncdot .9s ease-in-out infinite}
+@keyframes syncdot{0%,100%{opacity:.25}50%{opacity:1}}
+
 .sel-list{max-height:270px;overflow-y:auto;margin:0 -4px;padding:0 4px}
 .sel-item{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;
   border:1px solid var(--border);border-radius:10px;margin-bottom:7px;font-size:13.5px;background:var(--surface2)}
@@ -385,14 +397,50 @@ nav{position:fixed;left:0;right:0;bottom:0;z-index:60;background:rgba(255,255,25
 
   <div class="card" data-page-node-id="0IFOmBohp83uFJaHo1vUJo2">
     <div class="sec-title">数据与同步</div>
-    <div class="row" style="margin-top:0">
-      <button class="btn ghost sm" id="cloudUp">同步（双向）</button>
+
+    <div class="field">
+      <label>云端放哪儿</label>
+      <select id="bkBackend">
+        <option value="off">不同步（只存这台设备）</option>
+        <option value="gh">GitHub 私有仓库（免费，推荐）</option>
+        <option value="proxy">自建代理（Cloudflare Worker 等）</option>
+      </select>
+    </div>
+
+    <div id="bkGh" style="display:none">
+      <div class="field">
+        <label>私有仓库</label>
+        <input id="ghRepo" placeholder="hehezhang2025/rikke-data">
+        <div class="hint">填 <code>你的用户名/仓库名</code>。必须是<b>私有</b>仓库，别填公开的那个——公开仓库等于把日记发到网上。</div>
+      </div>
+      <div class="field">
+        <label>访问令牌（Token）</label>
+        <input id="ghToken" type="password" placeholder="ghp_ 或 github_pat_ 开头">
+        <div class="hint">去 github.com/settings/tokens 生成一个，<b>只勾这一项权限</b>：Contents 读写。<br>令牌只存在这台设备的浏览器里。手机和电脑要填<b>同一个</b>令牌。</div>
+      </div>
+      <div class="row" style="margin-top:0">
+        <button class="btn ghost sm" id="ghTest">测试并初始化</button>
+        <button class="btn ghost sm" id="ghNew" title="用这个令牌自动建一个私有仓库">帮我建私有仓库</button>
+      </div>
+    </div>
+
+    <div class="switch" style="margin-top:12px">
+      <div class="l">记完自动同步<small>不用点按钮。每次记完、删完，后台静默同步一次；打开页面和切回前台也会自动拉一次。失败不打扰你，下次自动补。</small></div>
+      <div class="sw" id="swAuto"></div>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <button class="btn ghost sm" id="cloudUp">立即同步</button>
       <button class="btn ghost sm" id="cloudDown">只从云端拉取</button>
     </div>
     <div class="row" style="margin-top:8px">
       <button class="btn ghost sm" id="wipe" style="color:var(--warn)">清空全部数据</button>
     </div>
-    <div class="placeholder-hint" style="margin-top:10px">数据默认只存在这台设备的浏览器里，换浏览器、清缓存都会丢。想让手机和电脑共用同一份记录，就在下面「自定义」里填代理地址（必须 https）。<br><br><b>同步（双向）</b>＝先把云端拉下来并到本地，再把合并结果传回去，两边都记了也不会互相冲掉；<b>只拉取</b>＝只下不上。删除也会跟着同步。<br><br>代理跑在云端、7×24 在线，你电脑关机不影响手机读写。上次同步：<span id="lastSync">从未</span></div>
+    <div class="placeholder-hint" style="margin-top:10px">
+      <span id="syncState" class="sync-dot off">未配置</span>
+      <span id="syncInfo" style="margin-left:6px">数据只存在这台设备，换浏览器、清缓存会丢。</span>
+      <br><br><b>同步</b>＝先把云端拉下来并到本地，再把合并结果传回去。两边都记了也不会互相冲掉，删除同样会同步。云端 7×24 在线，你电脑关机不影响手机读写。
+    </div>
   </div>
 
   <div class="card" data-page-node-id="LrswTljD2kHNh89KATo76a">
@@ -470,7 +518,8 @@ nav{position:fixed;left:0;right:0;bottom:0;z-index:60;background:rgba(255,255,25
 
 const K_ENT='rikke_entries_v1', K_SET='rikke_settings_v1', K_WK='rikke_weeks_v1', K_TPL='rikke_tpl_recent';
 let ENTRIES=[], WEEKS={}, RECENT_TPL=[];
-const SET_DEF={ai:false,url:'',model:'',key:'',preset:'',extract:true,remind:true,notify:false,mail:'',lastBackup:null,snooze:null,tombs:[],lastSync:null};
+const SET_DEF={ai:false,url:'',model:'',key:'',preset:'',extract:true,remind:true,notify:false,mail:'',lastBackup:null,snooze:null,tombs:[],lastSync:null,
+  backend:'off',ghRepo:'',ghToken:'',autoSync:true,pending:false};
 let SETTINGS=Object.assign({},SET_DEF);
 
 const $=(s)=>document.querySelector(s);
@@ -1021,7 +1070,7 @@ function renderTimeline(){
     if(!confirm('删除这条记录？\n\n删掉后，其他设备同步时也会一起删掉。')) return;
     ENTRIES=ENTRIES.filter(x=>x.id!==b.dataset.del);
     markDeleted(b.dataset.del);
-    save(); renderAll(); toast('已删除');
+    save(); renderAll(); toast('已删除'); markDirty();
   });
   $$('#timeline .fchip').forEach(c=>c.onclick=()=>{
     FILTER=FILTER===c.dataset.f?null:c.dataset.f;
@@ -1103,7 +1152,7 @@ function weekData(mon){
   const sleep=byDay.map(es2=>{const s=es2.filter(e=>e.sleep&&e.sleep.hours!==null).map(e=>e.sleep.hours);return s.length?s[s.length-1]:null});
   const sq=byDay.map(es2=>{const s=es2.filter(e=>e.sleep&&e.sleep.q!==null).map(e=>e.sleep.q);return s.length?s[s.length-1]:null});
   const sportDays=byDay.map(es2=>{const s=es2.filter(e=>e.sport);if(!s.length)return null;
-    return {min:s.reduce((a,b)=>a+(b.sport.dur||0),0),kinds:Array.from(new Set(s.map(e=>e.sport.kinds.join('/'))))}});
+    return {min:s.reduce((a,b)=>a+(b.sport.dur||0),0),kinds:Array.from(new Set(s.map(e=>(e.sport.kinds||[]).join('/'))))}});
   let f={good:0,oil:0,sugar:0,stim:0,over:0,lack:0,bodyBad:0,bodyGood:0,n:0};
   es.forEach(e=>{if(!e.food)return;f.n++;f.good+=e.food.good;f.oil+=e.food.oil;f.sugar+=e.food.sugar;
     f.stim+=e.food.stim;f.over+=e.food.over;f.lack+=e.food.lack;
@@ -1290,15 +1339,7 @@ function renderMe(){
   renderWeekList();
   renderRemind();
   renderRaw();
-  const ls=$('#lastSync');
-  if(ls){
-    if(SETTINGS.lastSync){
-      const d=new Date(SETTINGS.lastSync), now=new Date();
-      const sameDay=d.toDateString()===now.toDateString();
-      const p=n=>String(n).padStart(2,'0');
-      ls.textContent=(sameDay?'今天 ':fmtD(d).slice(5).replace('-','月')+'日 ')+p(d.getHours())+':'+p(d.getMinutes());
-    }else ls.textContent='从未';
-  }
+  setSyncUI();
 }
 
 function renderAll(){renderHeader();renderToday();renderTimeline();renderWeek();renderMe();renderQuiz()}
@@ -1551,7 +1592,7 @@ async function buildEntry(text,tags,quiz,onStatus){
     const r=await aiReply(text,p);
     if(r){entry.reply=r;entry.ai=true}
   }
-  ENTRIES.push(entry); save();
+  ENTRIES.push(entry); save(); markDirty();
   return entry;
 }
 function refreshAfterEntry(entry){
@@ -1597,6 +1638,17 @@ function syncSet(){
   if(sr) sr.classList.toggle('on',SETTINGS.remind!==false);
   if(sn) sn.classList.toggle('on',!!SETTINGS.notify);
   if(bm) bm.value=SETTINGS.mail||'';
+  syncSetUI();
+}
+/* 同步设置区的回填：后端选择、GitHub 配置、自动同步开关 */
+function syncSetUI(){
+  const bk=$('#bkBackend');
+  if(bk) bk.value=backend();
+  const g=$('#bkGh'); if(g) g.style.display=backend()==='gh'?'':'none';
+  const rp=$('#ghRepo'); if(rp) rp.value=SETTINGS.ghRepo||'';
+  const tk=$('#ghToken'); if(tk) tk.value=SETTINGS.ghToken||'';
+  const au=$('#swAuto'); if(au) au.classList.toggle('on',SETTINGS.autoSync!==false);
+  setSyncUI();
 }
 $('#swAi').onclick=()=>{SETTINGS.ai=!SETTINGS.ai;saveSet();syncSet()};
 $('#swExtract').onclick=()=>{SETTINGS.extract=!(SETTINGS.extract!==false);saveSet();syncSet()};
@@ -1615,6 +1667,19 @@ $('#aiPreset').addEventListener('change',e=>{
     saveSet();
   });
 });
+$('#bkBackend').addEventListener('change',e=>{
+  SETTINGS.backend=e.target.value; saveSet(); syncSetUI();
+  if(backendReady()) syncNow({silent:true});
+});
+['ghRepo','ghToken'].forEach(id=>{
+  $('#'+id).addEventListener('change',e=>{
+    SETTINGS[id]=e.target.value.trim(); saveSet(); setSyncUI();
+  });
+});
+$('#swAuto').onclick=()=>{
+  SETTINGS.autoSync=!(SETTINGS.autoSync!==false); saveSet(); syncSetUI();
+  if(SETTINGS.autoSync&&backendReady()) syncNow({silent:true});
+};
 $('#aiTest').onclick=async()=>{
   const b=$('#aiTest'); b.disabled=true;b.textContent='测试中…';
   /* 直接读输入框，避免 change 事件还没触发导致测的是旧配置 */
@@ -1631,11 +1696,81 @@ $('#aiTest').onclick=async()=>{
   else toast('连接失败：检查接口地址、模型名、Key，以及是否允许跨域');
 };
 
-/* 云端同步：只有填了 https 的自定义代理地址才可用，避免误把日记发到别处 */
+/* ==========================================================
+   云端同步
+   三种后端：off 不同步 / gh 用 GitHub 私有仓库 / proxy 自建代理
+   可全自动：记完、删完、打开页面、切回前台都会自己跑一遍
+   ========================================================== */
+function backend(){return SETTINGS.backend||'off'}
+function backendReady(){
+  const b=backend();
+  if(b==='gh') return !!(SETTINGS.ghToken&&SETTINGS.ghRepo);
+  if(b==='proxy') return /^https:\/\//.test((SETTINGS.url||'').trim());
+  return false;
+}
 function syncBase(){
   const u=(SETTINGS.url||'').trim().replace(/\/+$/,'');
   if(!/^https:\/\//.test(u)) return '';
   return u.replace(/\/v\d+$/,'')+'/api/sync';
+}
+
+/* ---------- GitHub 后端：数据存你自己账号下的私有仓库 ---------- */
+function ghApi(){
+  const p=(SETTINGS.ghRepo||'').trim().replace(/^\/+|\/+$/g,'');
+  return 'https://api.github.com/repos/'+p+'/contents/rikke-data.json';
+}
+function ghHd(){
+  return {Authorization:'Bearer '+(SETTINGS.ghToken||'').trim(),
+          Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
+}
+/* GitHub 收的是 base64。含中文时直接 btoa(str) 会抛 InvalidCharacterError，必须先按字节转。 */
+function toB64(s){
+  const b=new TextEncoder().encode(s); let r='';
+  for(let i=0;i<b.length;i++) r+=String.fromCharCode(b[i]);
+  return btoa(r);
+}
+function fromB64(s){
+  const r=atob((s||'').replace(/\s/g,'')); const b=new Uint8Array(r.length);
+  for(let i=0;i<r.length;i++) b[i]=r.charCodeAt(i);
+  return new TextDecoder().decode(b);
+}
+async function ghPull(){
+  const r=await fetch(ghApi(),{headers:ghHd()});
+  if(r.status===404) return {entries:[],tombs:[],sha:null};   /* 文件还没建，当空处理 */
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.message||('HTTP '+r.status));
+  let d={};
+  try{ d=JSON.parse(fromB64(j.content||'')) }catch(e){ d={} }
+  return {entries:Array.isArray(d.entries)?d.entries:[],tombs:Array.isArray(d.tombs)?d.tombs:[],sha:j.sha};
+}
+async function ghPush(payload,sha){
+  const body={message:'日课同步 '+new Date().toLocaleString('zh-CN'),
+              content:toB64(JSON.stringify(payload))};
+  if(sha) body.sha=sha;   /* 带 sha 是更新、不带是新建；并发写冲突靠它挡住 */
+  const r=await fetch(ghApi(),{method:'PUT',
+    headers:Object.assign({},ghHd(),{'Content-Type':'application/json'}),
+    body:JSON.stringify(body)});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){
+    const e=new Error(j.message||('HTTP '+r.status));
+    e.status=r.status; throw e;
+  }
+  return j;
+}
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+/* 手机和电脑同时记会撞 sha（409）。撞了就重新拉一次、再并一次、用新 sha 重试，
+   最多 3 轮——不重试的话，两台设备此后就再也不会真正同步上了。 */
+async function ghPushRetry(getSha,setSha){
+  for(let i=0;i<3;i++){
+    try{
+      return await ghPush({entries:ENTRIES,tombs:SETTINGS.tombs,ts:Date.now()},getSha());
+    }catch(e){
+      if(e.status!==409||i===2) throw e;
+      const g=await ghPull();
+      mergeRemote(g); save(); saveSet(); setSha(g.sha);
+      await wait(250+i*350);
+    }
+  }
 }
 /* 记下"删过什么"。没有墓碑的话，A 设备删掉的条目会被 B 设备重新推回云端，也就是删了又活过来。 */
 function markDeleted(id){
@@ -1644,6 +1779,31 @@ function markDeleted(id){
   if(SETTINGS.tombs.indexOf(id)<0) SETTINGS.tombs.push(id);
   if(SETTINGS.tombs.length>2000) SETTINGS.tombs=SETTINGS.tombs.slice(-2000);
   saveSet();
+}
+/* 云端数据一律当不可信处理：可能是旧版本写的、手工改过的、或被别的客户端写坏。
+   进来先洗一遍补齐字段——否则一条缺 sport.kinds 的脏数据会让整页渲染崩掉，
+   连带把同步也一起拖死（同步成功但页面白屏，比不同步还糟）。 */
+function sanitizeEntry(e){
+  if(!e||typeof e!=='object'||typeof e.id!=='string'||!e.id) return null;
+  const num=v=>{const n=Number(v);return isFinite(n)?n:0};
+  const o={id:e.id,ts:num(e.ts)||Date.now(),date:String(e.date||todayStr()),text:String(e.text||'')};
+  o.mood=(typeof e.mood==='number'&&isFinite(e.mood))?e.mood:null;
+  o.types=Array.isArray(e.types)?e.types.filter(x=>typeof x==='string'):[];
+  o.stress=Array.isArray(e.stress)?e.stress.filter(x=>typeof x==='string'):[];
+  o.reply=String(e.reply||'');
+  o.ai=!!e.ai; o.byAI=!!e.byAI;
+  o.src=(e.src==='quiz'||e.src==='text')?e.src:'text';
+  if(e.sleep&&typeof e.sleep==='object') o.sleep={h:num(e.sleep.h),q:num(e.sleep.q)};
+  else o.sleep=null;
+  if(e.sport&&typeof e.sport==='object')
+    o.sport={kinds:Array.isArray(e.sport.kinds)?e.sport.kinds.map(String):[],dur:num(e.sport.dur),intensity:num(e.sport.intensity)};
+  else o.sport=null;
+  if(e.food&&typeof e.food==='object')
+    o.food={good:num(e.food.good),oil:num(e.food.oil),sugar:num(e.food.sugar),stim:num(e.food.stim),
+            over:num(e.food.over),lack:num(e.food.lack),body:num(e.food.body),water:num(e.food.water)};
+  else o.food=null;
+  if(e.quiz&&typeof e.quiz==='object') o.quiz=e.quiz;
+  return o;
 }
 /* 把云端数据并进本地：同一条按时间戳取新，墓碑里的直接丢掉。返回本次变动。 */
 function mergeRemote(j){
@@ -1657,56 +1817,154 @@ function mergeRemote(j){
   const map=new Map();
   let del=0;
   ENTRIES.forEach(e=>{ if(dead[e.id]) del++; else map.set(e.id,e) });
-  let add=0,upd=0;
-  remote.forEach(e=>{
-    if(!e||!e.id||dead[e.id]) return;
+  let add=0,upd=0,skip=0;
+  remote.forEach(raw=>{
+    const e=sanitizeEntry(raw);
+    if(!e){skip++;return}
+    if(dead[e.id]) return;
     const has=map.get(e.id);
     if(!has){map.set(e.id,e);add++}
     else if((e.ts||0)>(has.ts||0)){map.set(e.id,e);upd++}
   });
   ENTRIES.length=0;
   Array.from(map.values()).sort((a,b)=>(a.ts||0)-(b.ts||0)).forEach(e=>ENTRIES.push(e));
-  return {add:add,upd:upd,del:del};
+  return {add:add,upd:upd,del:del,skip:skip};
 }
-async function cloudSync(mode){
-  const url=syncBase();
-  const btn=$(mode==='up'?'#cloudUp':'#cloudDown');
-  if(!url){toast('先在下面填接口地址，且必须是 https 开头');return}
-  if(!btn) return;
-  const old=btn.textContent; btn.disabled=true;
-  btn.textContent=mode==='up'?'连接云端…':'拉取中…';
-  const hd={'X-App-Token':SETTINGS.key||''};
-  try{
-    /* 第 1 步：无论上传还是拉取，一律先把云端拉下来合并。
-       早期版本是「本地整包直接覆盖云端」，手机记的会被电脑的旧数据冲掉，已修。 */
-    const rg=await fetch(url,{method:'GET',headers:hd});
-    const rj=await rg.json().catch(()=>({}));
-    if(!rg.ok) throw new Error(rj.error||('HTTP '+rg.status));
-    const st=mergeRemote(rj);
-    save(); saveSet(); renderAll();
-    let msg=st.del?(st.del+' 条已删除，'):'';
-    msg+= (st.add||st.upd) ? ('新增 '+st.add+' 条，更新 '+st.upd+' 条') : '本地已是最新';
-
-    /* 第 2 步：只拉取的话到此为止；点同步才把合并结果推回去 */
-    if(mode==='up'){
-      btn.textContent='上传中…';
-      const hd2={'X-App-Token':SETTINGS.key||'','Content-Type':'application/json'};
-      const rp=await fetch(url,{method:'PUT',headers:hd2,
-        body:JSON.stringify({entries:ENTRIES,tombs:SETTINGS.tombs})});
-      const pj=await rp.json().catch(()=>({}));
-      if(!rp.ok) throw new Error(pj.error||('HTTP '+rp.status));
-      SETTINGS.lastSync=Date.now(); saveSet();
-      msg+=' ｜ 云端现有 '+pj.count+' 条';
-    }
-    toast(msg);
-  }catch(e){
-    toast('同步失败：'+(e.message||e));
-  }finally{
-    btn.disabled=false; btn.textContent=old;
+function relTime(ts){
+  if(!ts) return '从未';
+  const d=Date.now()-ts;
+  if(d<60000) return '刚刚';
+  if(d<3600000) return Math.floor(d/60000)+' 分钟前';
+  if(d<86400000) return Math.floor(d/3600000)+' 小时前';
+  const t=new Date(ts);
+  return (t.getMonth()+1)+'月'+t.getDate()+'日 '+String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0');
+}
+const SYNC={ing:false,dirty:false,timer:null};
+function setSyncUI(){
+  const el=$('#syncState'), info=$('#syncInfo');
+  if(!el) return;
+  const b=backend();
+  let cls='off', txt='未配置';
+  if(b!=='off'&&!backendReady()){ cls='off'; txt='待填写' }
+  else if(b==='off'){ cls='off'; txt='未配置' }
+  else if(SYNC.ing){ cls='ing'; txt='同步中' }
+  else if(SETTINGS.pending){ cls='pending'; txt='待同步' }
+  else if(SETTINGS.lastSync){ cls='ok'; txt='已同步' }
+  else { cls='off'; txt='未同步' }
+  el.className='sync-dot '+cls; el.textContent=txt;
+  if(info){
+    if(cls==='ok') info.textContent='上次同步 '+relTime(SETTINGS.lastSync)+'，云端与本地一致。';
+    else if(cls==='pending') info.textContent='暂时连不上云端；改动已存本地，联网后自动补上。';
+    else if(cls==='ing') info.textContent='正在和云端对账…';
+    else if(txt==='待填写') info.textContent='把上面的仓库名和令牌填好就能用了。';
+    else info.textContent='数据只存在这台设备，换浏览器、清缓存会丢。';
   }
 }
-$('#cloudUp').onclick=()=>cloudSync('up');
-$('#cloudDown').onclick=()=>cloudSync('down');
+/* 自动同步：任何改动都走这里。1.2 秒内的连续操作合并成一次，避免记一句发一个请求。 */
+function scheduleSync(ms){
+  clearTimeout(SYNC.timer);
+  if(!backendReady()||!SETTINGS.autoSync) return;
+  SYNC.timer=setTimeout(()=>syncNow({silent:true}), ms==null?1200:ms);
+}
+function markDirty(){
+  SETTINGS.pending=true; saveSet();
+  if(SETTINGS.autoSync) scheduleSync();
+  setSyncUI();
+}
+async function syncNow(opt){
+  opt=opt||{};
+  const b=backend();
+  if(b==='off'){ if(!opt.silent) toast('先在上面选一个云端存放方式'); return null }
+  if(!backendReady()){ if(!opt.silent) toast('仓库名或令牌还没填'); return null }
+  if(SYNC.ing){ SYNC.dirty=true; return null }   /* 上一次还没完：打标记，结束后补跑 */
+  SYNC.ing=true; setSyncUI();
+  let st=null;
+  try{
+    let remote={entries:[],tombs:[]}, pushFn=null;
+    if(b==='gh'){
+      const g=await ghPull();
+      remote=g;
+      let sha=g.sha;
+      pushFn=()=>ghPushRetry(()=>sha,v=>{sha=v});
+    }else{
+      const url=syncBase();
+      const r=await fetch(url,{headers:{'X-App-Token':SETTINGS.key||''}});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
+      remote=j;
+      pushFn=async()=>{
+        const rp=await fetch(url,{method:'PUT',
+          headers:{'X-App-Token':SETTINGS.key||'','Content-Type':'application/json'},
+          body:JSON.stringify({entries:ENTRIES,tombs:SETTINGS.tombs})});
+        const pj=await rp.json().catch(()=>({}));
+        if(!rp.ok) throw new Error(pj.error||('HTTP '+rp.status));
+        return pj;
+      };
+    }
+    /* 第 1 步：无论上传还是拉取，一律先把云端拉下来合并。
+       早期版本是「本地整包直接覆盖云端」，手机记的会被电脑旧数据冲掉，已修。 */
+    st=mergeRemote(remote);
+    save(); saveSet();
+    /* 第 2 步：只拉取的话到此为止，不回写 */
+    let pj=null;
+    if(opt.pullOnly!==true) pj=await pushFn();
+    SETTINGS.lastSync=Date.now(); SETTINGS.pending=false; saveSet();
+    if(st.add||st.upd||st.del) renderAll();
+    setSyncUI();
+    if(!opt.silent){
+      const m=[];
+      if(st.del) m.push(st.del+' 条已删除');
+      if(st.add||st.upd) m.push('新增 '+st.add+' 条，更新 '+st.upd+' 条');
+      if(pj&&pj.count!=null) m.push('云端共 '+pj.count+' 条');
+      else if(b==='gh') m.push('云端共 '+ENTRIES.length+' 条');
+      toast(m.length?m.join('，'):'云端和本地一致');
+    }
+    return st;
+  }catch(e){
+    SETTINGS.pending=true; saveSet(); setSyncUI();
+    if(!opt.silent) toast('同步失败：'+(e.message||e));
+    return null;
+  }finally{
+    SYNC.ing=false;
+    if(SYNC.dirty){ SYNC.dirty=false; scheduleSync(0) } else setSyncUI();
+  }
+}
+$('#cloudUp').onclick=()=>syncNow({});
+$('#cloudDown').onclick=()=>syncNow({pullOnly:true});
+$('#ghTest').onclick=async()=>{
+  if(!backendReady()){toast('先填仓库名和令牌');return}
+  const b=$('#ghTest'); b.disabled=true; b.textContent='连接中…';
+  try{
+    await ghPull();      /* 能读通就说明令牌有效、仓库存在且有权限 */
+    await syncNow({});   /* 顺手把本地数据初始化上去 */
+    toast('已连上云端');
+  }catch(e){ toast('连接失败：'+(e.message||e)) }
+  finally{ b.disabled=false; b.textContent='测试并初始化' }
+};
+/* 一键建仓：用户不用去 GitHub 网页上点，令牌有权限就直接帮他建 */
+$('#ghNew').onclick=async()=>{
+  if(!(SETTINGS.ghToken||'').trim()){toast('先填令牌');return}
+  const name='rikke-data';
+  if(!confirm('用这个令牌在你的 GitHub 账号下建一个私有仓库「'+name+'」。\n\n私有仓库只有你自己能看到。继续？')) return;
+  const b=$('#ghNew'); b.disabled=true; b.textContent='创建中…';
+  try{
+    const r=await fetch('https://api.github.com/user/repos',{method:'POST',
+      headers:Object.assign({},ghHd(),{'Content-Type':'application/json'}),
+      body:JSON.stringify({name:name,description:'日课 · 个人健康记录（私有）',private:true,auto_init:true})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok&&r.status!==422) throw new Error(j.message||('HTTP '+r.status));
+    const full=j.full_name||(((SETTINGS.ghRepo||'').split('/')[0]||'')+'/'+name);
+    SETTINGS.ghRepo=full; SETTINGS.backend='gh'; saveSet(); syncSetUI();
+    toast(r.status===422?('仓库已存在，已填入：'+full):('已创建私有仓库 '+full));
+    await syncNow({});
+  }catch(e){ toast('创建失败：'+(e.message||e)) }
+  finally{ b.disabled=false; b.textContent='帮我建私有仓库' }
+};
+/* 断网恢复、切回前台，都自动补一次 */
+window.addEventListener('online',()=>{ if(SETTINGS.pending||SETTINGS.autoSync) syncNow({silent:true}) });
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&SETTINGS.autoSync&&backendReady()) syncNow({silent:true});
+});
 
 /* 导出 */
 function download(name,content,type){
@@ -1988,20 +2246,24 @@ $('#fileIn').addEventListener('change',e=>{
     if(!j.entries) throw new Error('bad');
     if(!confirm('导入 '+j.entries.length+' 条记录，将覆盖当前数据，确定？'))return;
     ENTRIES=j.entries; WEEKS=j.weeks||{}; if(j.settings)SETTINGS=Object.assign(SETTINGS,j.settings);
-    save();saveSet();syncSet();renderAll();toast('已导入 '+ENTRIES.length+' 条');
+    save();saveSet();syncSet();renderAll();toast('已导入 '+ENTRIES.length+' 条'); markDirty();
   }catch(err){toast('文件格式不对')} };
   r.readAsText(f); e.target.value='';
 });
 $('#impJson').onclick=()=>$('#fileIn').click();
 $('#wipe').onclick=()=>{
   if(!confirm('将清空全部记录与周报，且无法恢复。\n建议先做一次 JSON 备份。\n\n确定清空？'))return;
-  if(!confirm('再确认一次：真的要删除全部 '+ENTRIES.length+' 条记录吗？'))return;
-  ENTRIES=[];WEEKS={};save();renderAll();toast('已清空');
+  const cloud=backend()!=='off'&&backendReady();
+  if(!confirm('再确认一次：真的要删除全部 '+ENTRIES.length+' 条记录吗？'
+    +(cloud?'\n\n已开启同步，云端也会一起清空。':'') ))return;
+  ENTRIES=[];WEEKS={};SETTINGS.tombs=[];save();saveSet();renderAll();toast('已清空'); markDirty();
 };
 
 /* 首次进入的引导 */
 load(); syncSet(); renderAll(); renderRemind();
 if(!ENTRIES.length){ $('#input').value=''; }
+/* 开页面先静默拉一次云端：手机电脑各记各的，进来就能看到对方的 */
+if(SETTINGS.autoSync!==false&&backendReady()) syncNow({silent:true});
 
 /* 注册 Service Worker：安装到桌面后可离线使用（需 https 或 localhost） */
 if('serviceWorker' in navigator){
