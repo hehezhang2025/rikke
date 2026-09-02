@@ -386,13 +386,13 @@ nav{position:fixed;left:0;right:0;bottom:0;z-index:60;background:rgba(255,255,25
   <div class="card" data-page-node-id="0IFOmBohp83uFJaHo1vUJo2">
     <div class="sec-title">数据与同步</div>
     <div class="row" style="margin-top:0">
-      <button class="btn ghost sm" id="cloudUp">上传到云端</button>
-      <button class="btn ghost sm" id="cloudDown">从云端拉取</button>
+      <button class="btn ghost sm" id="cloudUp">同步（双向）</button>
+      <button class="btn ghost sm" id="cloudDown">只从云端拉取</button>
     </div>
     <div class="row" style="margin-top:8px">
       <button class="btn ghost sm" id="wipe" style="color:var(--warn)">清空全部数据</button>
     </div>
-    <div class="placeholder-hint" style="margin-top:10px">数据默认只存在这台设备的浏览器里，换浏览器、清缓存都会丢。想让手机和电脑共用同一份记录，就在下面「自定义」里填自己的代理地址（https）。拉取按时间取新，不会互相覆盖；没配地址时点它会提示你先填。</div>
+    <div class="placeholder-hint" style="margin-top:10px">数据默认只存在这台设备的浏览器里，换浏览器、清缓存都会丢。想让手机和电脑共用同一份记录，就在下面「自定义」里填代理地址（必须 https）。<br><br><b>同步（双向）</b>＝先把云端拉下来并到本地，再把合并结果传回去，两边都记了也不会互相冲掉；<b>只拉取</b>＝只下不上。删除也会跟着同步。<br><br>代理跑在云端、7×24 在线，你电脑关机不影响手机读写。上次同步：<span id="lastSync">从未</span></div>
   </div>
 
   <div class="card" data-page-node-id="LrswTljD2kHNh89KATo76a">
@@ -470,7 +470,7 @@ nav{position:fixed;left:0;right:0;bottom:0;z-index:60;background:rgba(255,255,25
 
 const K_ENT='rikke_entries_v1', K_SET='rikke_settings_v1', K_WK='rikke_weeks_v1', K_TPL='rikke_tpl_recent';
 let ENTRIES=[], WEEKS={}, RECENT_TPL=[];
-const SET_DEF={ai:false,url:'',model:'',key:'',preset:'',extract:true,remind:true,notify:false,mail:'',lastBackup:null,snooze:null};
+const SET_DEF={ai:false,url:'',model:'',key:'',preset:'',extract:true,remind:true,notify:false,mail:'',lastBackup:null,snooze:null,tombs:[],lastSync:null};
 let SETTINGS=Object.assign({},SET_DEF);
 
 const $=(s)=>document.querySelector(s);
@@ -1018,8 +1018,10 @@ function renderTimeline(){
   });
   $('#timeline').innerHTML=h;
   $$('#timeline .del').forEach(b=>b.onclick=()=>{
-    if(!confirm('删除这条记录？')) return;
-    ENTRIES=ENTRIES.filter(x=>x.id!==b.dataset.del); save(); renderAll(); toast('已删除');
+    if(!confirm('删除这条记录？\n\n删掉后，其他设备同步时也会一起删掉。')) return;
+    ENTRIES=ENTRIES.filter(x=>x.id!==b.dataset.del);
+    markDeleted(b.dataset.del);
+    save(); renderAll(); toast('已删除');
   });
   $$('#timeline .fchip').forEach(c=>c.onclick=()=>{
     FILTER=FILTER===c.dataset.f?null:c.dataset.f;
@@ -1288,6 +1290,15 @@ function renderMe(){
   renderWeekList();
   renderRemind();
   renderRaw();
+  const ls=$('#lastSync');
+  if(ls){
+    if(SETTINGS.lastSync){
+      const d=new Date(SETTINGS.lastSync), now=new Date();
+      const sameDay=d.toDateString()===now.toDateString();
+      const p=n=>String(n).padStart(2,'0');
+      ls.textContent=(sameDay?'今天 ':fmtD(d).slice(5).replace('-','月')+'日 ')+p(d.getHours())+':'+p(d.getMinutes());
+    }else ls.textContent='从未';
+  }
 }
 
 function renderAll(){renderHeader();renderToday();renderTimeline();renderWeek();renderMe();renderQuiz()}
@@ -1626,40 +1637,68 @@ function syncBase(){
   if(!/^https:\/\//.test(u)) return '';
   return u.replace(/\/v\d+$/,'')+'/api/sync';
 }
+/* 记下"删过什么"。没有墓碑的话，A 设备删掉的条目会被 B 设备重新推回云端，也就是删了又活过来。 */
+function markDeleted(id){
+  if(!id) return;
+  if(!Array.isArray(SETTINGS.tombs)) SETTINGS.tombs=[];
+  if(SETTINGS.tombs.indexOf(id)<0) SETTINGS.tombs.push(id);
+  if(SETTINGS.tombs.length>2000) SETTINGS.tombs=SETTINGS.tombs.slice(-2000);
+  saveSet();
+}
+/* 把云端数据并进本地：同一条按时间戳取新，墓碑里的直接丢掉。返回本次变动。 */
+function mergeRemote(j){
+  const remote=Array.isArray(j&&j.entries)?j.entries:[];
+  const rt=Array.isArray(j&&j.tombs)?j.tombs:[];
+  if(!Array.isArray(SETTINGS.tombs)) SETTINGS.tombs=[];
+  rt.forEach(id=>{ if(typeof id==='string'&&SETTINGS.tombs.indexOf(id)<0) SETTINGS.tombs.push(id) });
+  if(SETTINGS.tombs.length>2000) SETTINGS.tombs=SETTINGS.tombs.slice(-2000);
+
+  const dead={}; SETTINGS.tombs.forEach(id=>dead[id]=1);
+  const map=new Map();
+  let del=0;
+  ENTRIES.forEach(e=>{ if(dead[e.id]) del++; else map.set(e.id,e) });
+  let add=0,upd=0;
+  remote.forEach(e=>{
+    if(!e||!e.id||dead[e.id]) return;
+    const has=map.get(e.id);
+    if(!has){map.set(e.id,e);add++}
+    else if((e.ts||0)>(has.ts||0)){map.set(e.id,e);upd++}
+  });
+  ENTRIES.length=0;
+  Array.from(map.values()).sort((a,b)=>(a.ts||0)-(b.ts||0)).forEach(e=>ENTRIES.push(e));
+  return {add:add,upd:upd,del:del};
+}
 async function cloudSync(mode){
   const url=syncBase();
   const btn=$(mode==='up'?'#cloudUp':'#cloudDown');
   if(!url){toast('先在下面填接口地址，且必须是 https 开头');return}
   if(!btn) return;
-  const old=btn.textContent; btn.disabled=true; btn.textContent=mode==='up'?'上传中…':'拉取中…';
+  const old=btn.textContent; btn.disabled=true;
+  btn.textContent=mode==='up'?'连接云端…':'拉取中…';
   const hd={'X-App-Token':SETTINGS.key||''};
   try{
+    /* 第 1 步：无论上传还是拉取，一律先把云端拉下来合并。
+       早期版本是「本地整包直接覆盖云端」，手机记的会被电脑的旧数据冲掉，已修。 */
+    const rg=await fetch(url,{method:'GET',headers:hd});
+    const rj=await rg.json().catch(()=>({}));
+    if(!rg.ok) throw new Error(rj.error||('HTTP '+rg.status));
+    const st=mergeRemote(rj);
+    save(); saveSet(); renderAll();
+    let msg=st.del?(st.del+' 条已删除，'):'';
+    msg+= (st.add||st.upd) ? ('新增 '+st.add+' 条，更新 '+st.upd+' 条') : '本地已是最新';
+
+    /* 第 2 步：只拉取的话到此为止；点同步才把合并结果推回去 */
     if(mode==='up'){
-      hd['Content-Type']='application/json';
-      const r=await fetch(url,{method:'PUT',headers:hd,body:JSON.stringify({entries:ENTRIES})});
-      const j=await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
+      btn.textContent='上传中…';
+      const hd2={'X-App-Token':SETTINGS.key||'','Content-Type':'application/json'};
+      const rp=await fetch(url,{method:'PUT',headers:hd2,
+        body:JSON.stringify({entries:ENTRIES,tombs:SETTINGS.tombs})});
+      const pj=await rp.json().catch(()=>({}));
+      if(!rp.ok) throw new Error(pj.error||('HTTP '+rp.status));
       SETTINGS.lastSync=Date.now(); saveSet();
-      toast('已上传 '+j.count+' 条');
-    }else{
-      const r=await fetch(url,{method:'GET',headers:hd});
-      const j=await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
-      const remote=Array.isArray(j.entries)?j.entries:[];
-      const map=new Map();
-      ENTRIES.forEach(e=>map.set(e.id,e));
-      let add=0,upd=0;
-      remote.forEach(e=>{
-        if(!e||!e.id) return;
-        const has=map.get(e.id);
-        if(!has){map.set(e.id,e);add++}
-        else if((e.ts||0)>(has.ts||0)){map.set(e.id,e);upd++}
-      });
-      ENTRIES.length=0;
-      Array.from(map.values()).sort((a,b)=>(a.ts||0)-(b.ts||0)).forEach(e=>ENTRIES.push(e));
-      save(); renderAll();
-      toast(add||upd?('新增 '+add+' 条，更新 '+upd+' 条'):'云端和本地一样，没有变化');
+      msg+=' ｜ 云端现有 '+pj.count+' 条';
     }
+    toast(msg);
   }catch(e){
     toast('同步失败：'+(e.message||e));
   }finally{

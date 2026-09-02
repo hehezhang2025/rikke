@@ -43,7 +43,13 @@ export default {
       if (req.method === 'GET') {
         if (!env.RIKKE) return cors(json({ error: '未绑定 KV，同步功能未开启' }, 501));
         const raw = await env.RIKKE.get('data');
-        return cors(json(raw ? JSON.parse(raw) : { entries: [], ts: 0 }));
+        if (!raw) return cors(json({ entries: [], tombs: [], ts: 0 }));
+        let d;
+        try { d = JSON.parse(raw); } catch (e) { return cors(json({ entries: [], tombs: [], ts: 0 })); }
+        /* 老版本存的数据没有 tombs 字段，补上，前端就不用做兼容判断了 */
+        return cors(json({ entries: Array.isArray(d.entries) ? d.entries : [],
+                           tombs: Array.isArray(d.tombs) ? d.tombs : [],
+                           ts: d.ts || 0 }));
       }
       if (req.method === 'PUT') {
         if (!env.RIKKE) return cors(json({ error: '未绑定 KV，同步功能未开启' }, 501));
@@ -51,7 +57,21 @@ export default {
         try { body = await req.json(); } catch (e) { return cors(json({ error: '请求体不是合法 JSON' }, 400)); }
         if (!body || !Array.isArray(body.entries)) return cors(json({ error: '缺少 entries 数组' }, 400));
         if (body.entries.length > 5000) return cors(json({ error: '条目过多，拒绝写入' }, 413));
-        const payload = { entries: body.entries, ts: Date.now() };
+        const tombs = Array.isArray(body.tombs) ? body.tombs.slice(-2000) : [];
+        /* 云端墓碑只增不减，取并集：防止 A 设备删了、B 设备又把旧的推回来 */
+        let merged = tombs;
+        const prev = await env.RIKKE.get('data');
+        if (prev) {
+          try {
+            const pd = JSON.parse(prev);
+            if (Array.isArray(pd.tombs)) {
+              const set = new Set(tombs);
+              pd.tombs.forEach(id => { if (typeof id === 'string') set.add(id) });
+              merged = Array.from(set).slice(-2000);
+            }
+          } catch (e) { /* 旧数据坏了就当没有，用本次的 */ }
+        }
+        const payload = { entries: body.entries, tombs: merged, ts: Date.now() };
         await env.RIKKE.put('data', JSON.stringify(payload));
         return cors(json({ ok: true, ts: payload.ts, count: body.entries.length }));
       }
