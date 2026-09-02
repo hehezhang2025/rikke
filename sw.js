@@ -1,5 +1,5 @@
 /* 日课 Service Worker —— 让 App 安装到桌面后离线可用 */
-const CACHE = 'rikke-v2';   /* 每次改动 index.html 记得 +1，否则手机上会一直用旧缓存 */
+const CACHE = 'rikke-v3';   /* 每次改动 index.html 记得 +1，否则手机上会一直用旧缓存 */
 const ASSETS = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {

@@ -361,16 +361,32 @@ nav{position:fixed;left:0;right:0;bottom:0;z-index:60;background:rgba(255,255,25
       <button class="btn ghost sm" id="impJson" data-page-node-id="TLj0UyDKac2DSwkIbae426">从备份恢复</button>
       <button class="btn ghost sm" id="wipe" style="color:var(--warn)" data-page-node-id="bHjRnRt7r2f1Eg2FhWNYlf">清空全部数据</button>
     </div>
-    <div class="placeholder-hint" style="margin-top:10px" data-page-node-id="55kZzUZvvBs7e9OC6zZu9p">所有数据只存在这台设备的浏览器里，不联网、不上传。换设备请用 JSON 备份迁移。</div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn ghost sm" id="cloudUp">上传到云端</button>
+      <button class="btn ghost sm" id="cloudDown">从云端拉取</button>
+    </div>
+    <div class="placeholder-hint" style="margin-top:10px" data-page-node-id="55kZzUZvvBs7e9OC6zZu9p">数据默认只存在这台设备的浏览器里。上面两个按钮是可选的：如果你在下面「自定义」里填了自己的代理地址（https），就能让手机和电脑共用同一份记录。拉取按时间取新，不会互相覆盖。没配代理时点它会提示你先填地址。</div>
   </div>
 
   <div class="card" data-page-node-id="LrswTljD2kHNh89KATo76a">
     <div class="sec-title" data-page-node-id="xDFSWsCJ49u7jEqYSN8DHK">AI 增强（可选）</div>
     <div class="switch" data-page-node-id="91L0BCMAtgtTOEZy1GUsHE">
-      <div class="l" data-page-node-id="wkmDZxkCoW9a6TbzD5SOCn">启用大模型分析<small data-page-node-id="6mFmhfPkA3xRBeZej7tu0n">开启后，回应由本地模型生成；失败自动回退规则引擎</small></div>
+      <div class="l" data-page-node-id="wkmDZxkCoW9a6TbzD5SOCn">启用大模型分析<small data-page-node-id="6mFmhfPkA3xRBeZej7tu0n">开启后：先让模型读懂你的话并填字段，再生成回应；任一步失败都自动回退规则引擎</small></div>
       <div class="sw" id="swAi" data-page-node-id="aFxkE4vHZeZssyYaJo60pC"></div>
     </div>
     <div id="aiCfg" style="display:none;margin-top:12px" data-page-node-id="GbuHTDh1SQYwkHyPRRUIFB">
+      <div class="field">
+        <label>服务商（选一个自动填地址，你只填 Key）</label>
+        <select id="aiPreset">
+          <option value="">—— 自定义 ——</option>
+          <option value="glm">智谱 GLM（有免费模型）</option>
+          <option value="deepseek">DeepSeek（便宜）</option>
+          <option value="siliconflow">硅基流动 SiliconFlow（有免费模型）</option>
+          <option value="groq">Groq（境外，免费额度）</option>
+          <option value="ollama">本机 Ollama（仅电脑本机可用）</option>
+        </select>
+        <div class="hint">各家接口地址与模型名会调整，若填完连不通，请以服务商官网最新文档为准。</div>
+      </div>
       <div class="field" data-page-node-id="aQ8VurWaXqH3cfbuMx0Fhr">
         <label data-page-node-id="RDepDltJQDX04ujWQ13k8r">接口地址（OpenAI 兼容）</label>
         <input id="aiUrl" placeholder="http://localhost:11434/v1" data-page-node-id="VmHdZSkFIZIBScQUprQjdz">
@@ -384,7 +400,12 @@ nav{position:fixed;left:0;right:0;bottom:0;z-index:60;background:rgba(255,255,25
         <label data-page-node-id="A5yPgRDvNEcS349ZOeyaJw">API Key（本地模型可留空）</label>
         <input id="aiKey" type="password" placeholder="留空" data-page-node-id="nZE4cqx1rD5rKw1U34bQuX">
       </div>
+      <div class="switch">
+        <div class="l">让模型理解我的话<small>关掉则只让模型写回应，字段仍由本地规则抽取（快、离线可用，但看不懂复杂表达）</small></div>
+        <div class="sw" id="swExtract"></div>
+      </div>
       <button class="btn ghost sm" id="aiTest" data-page-node-id="BvBIDfmNLTvNM63d8xDF0g">测试连接</button>
+      <div class="placeholder-hint" style="margin-top:10px">Key 只存在这台设备的浏览器里，不会随页面上传、也不会进任何备份文件。但换设备要重新填，且共用电脑会留下痕迹——介意的话建议走「自定义」接口，填你自己的代理地址，让 Key 留在服务端。</div>
     </div>
   </div>
 
@@ -422,7 +443,7 @@ nav{position:fixed;left:0;right:0;bottom:0;z-index:60;background:rgba(255,255,25
 
 const K_ENT='rikke_entries_v1', K_SET='rikke_settings_v1', K_WK='rikke_weeks_v1', K_TPL='rikke_tpl_recent';
 let ENTRIES=[], WEEKS={}, RECENT_TPL=[];
-const SET_DEF={ai:false,url:'',model:'',key:'',remind:true,notify:false,mail:'',lastBackup:null,snooze:null};
+const SET_DEF={ai:false,url:'',model:'',key:'',preset:'',extract:true,remind:true,notify:false,mail:'',lastBackup:null,snooze:null};
 let SETTINGS=Object.assign({},SET_DEF);
 
 const $=(s)=>document.querySelector(s);
@@ -762,6 +783,92 @@ async function aiReply(text,p){
   }catch(e){ clearTimeout(to); return null; }
 }
 
+/* --- 大模型做「理解」：把一句话拆成结构化字段 --- */
+const PRESETS={
+  glm:{url:'https://open.bigmodel.cn/api/paas/v4',model:'glm-4-flash'},
+  deepseek:{url:'https://api.deepseek.com/v1',model:'deepseek-chat'},
+  siliconflow:{url:'https://api.siliconflow.cn/v1',model:'Qwen/Qwen2.5-7B-Instruct'},
+  groq:{url:'https://api.groq.com/openai/v1',model:'llama-3.1-8b-instant'},
+  ollama:{url:'http://localhost:11434/v1',model:'qwen2.5:7b'}
+};
+const EXTRACT_SYS='你是健康日志的标注器。读用户的一句话记录，只输出一个 JSON 对象，不要任何解释、不要代码块围栏、不要多余文字。字段定义：'
+ +'"mood"：情绪分值，数字，2很好、1还行、0平淡、-1有点低、-2很差，判断不出填null；'
+ +'"sleep"：{"hours":睡眠小时数数字或null,"q":睡眠质量1到5的数字或null}；'
+ +'"sport"：{"kinds":["跑步"],"dur":运动分钟数数字或null,"intensity":强度1到3的数字或null}；'
+ +'"stress"：压力源数组，从 工作、家庭、健康、钱、人际、其他 里选，没有则填[]；'
+ +'"tags"：涉及的主题数组，从 饮食、运动、睡眠、心情、工作、家庭 里选，可多选；'
+ +'"summary"：12字以内的一句话摘要。'
+ +'规则：没提到的信息一律填 null 或空数组，绝不编造。注意否定与反话，例如「不开心」是负分、「压力不大」是中性偏正、「没睡好」是睡眠差。';
+
+function parseJsonLoose(c){
+  let s=String(c||'').trim();
+  s=s.replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,'');
+  const a=s.indexOf('{'), b=s.lastIndexOf('}');
+  if(a<0||b<=a) return null;
+  try{ const o=JSON.parse(s.slice(a,b+1)); return (o&&typeof o==='object')?o:null }catch(e){ return null }
+}
+async function aiExtract(text){
+  if(!SETTINGS.ai||SETTINGS.extract===false) return null;
+  if(!SETTINGS.url||!SETTINGS.model) return null;
+  const body={model:SETTINGS.model,stream:false,temperature:0.2,messages:[
+    {role:'system',content:EXTRACT_SYS},
+    {role:'user',content:text}
+  ]};
+  const hd={'Content-Type':'application/json'};
+  if(SETTINGS.key) hd['Authorization']='Bearer '+SETTINGS.key;
+  const ctl=new AbortController(); const to=setTimeout(()=>ctl.abort(),25000);
+  try{
+    const r=await fetch(SETTINGS.url.replace(/\/+$/,'')+'/chat/completions',
+      {method:'POST',headers:hd,body:JSON.stringify(body),signal:ctl.signal});
+    clearTimeout(to);
+    if(!r.ok) return null;
+    const j=await r.json();
+    const c=j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content;
+    return c?parseJsonLoose(c):null;
+  }catch(e){ clearTimeout(to); return null; }
+}
+const TAG_MAP={'饮食':'food','运动':'sport','睡眠':'sleep','心情':'mood','工作':'work','家庭':'family'};
+const VALID_TAGS=['food','sport','sleep','mood','work','family'];
+const STRESS_OK=['工作','家庭','健康','钱','人际','其他'];
+/* 模型给什么信什么，但逐字段校验；任一项不合法就丢弃该项，其余照常采用 */
+function mergeExtract(p,x){
+  if(!x||typeof x!=='object') return false;
+  let hit=false;
+  if(typeof x.mood==='number'&&isFinite(x.mood)){
+    p.mood=clamp(Math.round(x.mood*10)/10,-2,2); hit=true;
+  }
+  if(x.sleep&&typeof x.sleep==='object'){
+    const s=x.sleep, add={};
+    if(typeof s.hours==='number'&&isFinite(s.hours)&&s.hours>=0&&s.hours<=24){add.hours=Math.round(s.hours*10)/10;hit=true}
+    if(typeof s.q==='number'&&isFinite(s.q)){add.q=clamp(Math.round(s.q*10)/10,0,5);hit=true}
+    if(Object.keys(add).length){
+      const old=p.sleep||{};
+      p.sleep={hours:add.hours!==undefined?add.hours:(old.hours===undefined?null:old.hours),
+               q:add.q!==undefined?add.q:(old.q===undefined?null:old.q),
+               bedtime:old.bedtime===undefined?null:old.bedtime};
+    }
+  }
+  if(x.sport&&typeof x.sport==='object'){
+    const s=x.sport, add={}, old=p.sport||{};
+    if(Array.isArray(s.kinds)&&s.kinds.length){add.kinds=s.kinds.map(String).slice(0,4);hit=true}
+    if(typeof s.dur==='number'&&isFinite(s.dur)&&s.dur>0){add.dur=Math.round(s.dur);hit=true}
+    if(typeof s.intensity==='number'&&isFinite(s.intensity)){add.intensity=clamp(Math.round(s.intensity),1,3);hit=true}
+    if(Object.keys(add).length) p.sport=Object.assign({kinds:[],dur:0,intensity:1},old,add);
+  }
+  if(Array.isArray(x.stress)&&x.stress.length){
+    const arr=x.stress.map(v=>String(v).trim()).filter(v=>STRESS_OK.indexOf(v)>-1).slice(0,4);
+    if(arr.length){p.stress=arr;hit=true}
+  }
+  if(Array.isArray(x.tags)&&x.tags.length){
+    const t=x.tags.map(v=>TAG_MAP[String(v).trim()]||String(v).trim()).filter(v=>VALID_TAGS.indexOf(v)>-1);
+    if(t.length){p.types=Array.from(new Set((p.types||[]).concat(t)));hit=true}
+  }
+  if(x.summary&&typeof x.summary==='string'&&x.summary.trim()){
+    p.summary=x.summary.trim().slice(0,20); hit=true;
+  }
+  return hit;
+}
+
 /* ==========================================================
    3. 渲染
    ========================================================== */
@@ -825,7 +932,9 @@ function renderReply(entry){
   const html='<div class="reply">'+
     '<div class="who"><span class="av">日</span>说给你听</div>'+
     '<p>'+esc(entry.reply)+'</p>'+
-    (entry.ai?'<div class="tagline"><span class="tag info">由本地模型生成</span></div>':'')+
+    (entry.byAI||entry.ai?'<div class="tagline"><span class="tag info">'+
+      (entry.byAI&&entry.ai?'模型理解 + 生成回应':entry.byAI?'字段由模型理解':'回应由模型生成')+
+      '</span></div>':'')+
     '<div class="tagline">'+renderTags(entry)+'</div>'+
     '</div>';
   $('#replySlot').innerHTML=html;
@@ -1379,8 +1488,16 @@ function applyQuiz(p,ov){
 async function buildEntry(text,tags,quiz,onStatus){
   const p=analyze(text,tags);
   if(quiz) applyQuiz(p,quiz);
+  /* 选择题已经是结构化数据，不必再让模型理解一遍；只有自然语言才走抽取 */
+  let byAI=false;
+  if(SETTINGS.ai&&SETTINGS.extract!==false&&!quiz){
+    if(onStatus) onStatus('理解中…');
+    const x=await aiExtract(text);
+    if(x&&mergeExtract(p,x)) byAI=true;
+  }
   const local=composeReply(p,text);
   const entry={id:uid(),ts:Date.now(),date:todayStr(),text,...p,reply:local,ai:false};
+  if(byAI) entry.byAI=true;
   if(quiz) entry.quiz=quiz;
   if(SETTINGS.ai){
     if(onStatus) onStatus('模型中…');
@@ -1427,12 +1544,24 @@ function syncSet(){
   $('#aiUrl').value=SETTINGS.url||'';
   $('#aiModel').value=SETTINGS.model||'';
   $('#aiKey').value=SETTINGS.key||'';
+  const ps=$('#aiPreset'); if(ps) ps.value=SETTINGS.preset||'';
+  const se=$('#swExtract'); if(se) se.classList.toggle('on',SETTINGS.extract!==false);
   const sr=$('#swRemind'), sn=$('#swNotify'), bm=$('#bkMail');
   if(sr) sr.classList.toggle('on',SETTINGS.remind!==false);
   if(sn) sn.classList.toggle('on',!!SETTINGS.notify);
   if(bm) bm.value=SETTINGS.mail||'';
 }
 $('#swAi').onclick=()=>{SETTINGS.ai=!SETTINGS.ai;saveSet();syncSet()};
+$('#swExtract').onclick=()=>{SETTINGS.extract=!(SETTINGS.extract!==false);saveSet();syncSet()};
+$('#aiPreset').addEventListener('change',e=>{
+  const k=e.target.value;
+  SETTINGS.preset=k;
+  if(k&&PRESETS[k]){
+    SETTINGS.url=PRESETS[k].url; SETTINGS.model=PRESETS[k].model;
+  }
+  saveSet(); syncSet();
+  if(k&&PRESETS[k]) toast('已填入 '+PRESETS[k].model+'，接下来只填 Key');
+});
 ['aiUrl','aiModel','aiKey'].forEach(id=>{
   $('#'+id).addEventListener('change',e=>{
     SETTINGS[id.replace('ai','').toLowerCase()]=e.target.value.trim();
@@ -1446,10 +1575,63 @@ $('#aiTest').onclick=async()=>{
   SETTINGS.model=$('#aiModel').value.trim();
   SETTINGS.key=$('#aiKey').value.trim();
   saveSet();
+  const x=await aiExtract('测试：昨晚只睡了5小时，早上开会被批了，但中午跑了30分钟，心情还行');
   const r=await aiReply('测试：今天还不错',{mood:1,types:['mood'],stress:[]});
   b.disabled=false;b.textContent='测试连接';
-  toast(r?'连接成功：'+r.slice(0,24)+'…':'连接失败，请检查地址/模型/跨域设置');
+  if(x&&r) toast('连通：理解 + 回应都正常');
+  else if(x) toast('理解正常，但生成回应失败（模型可能不支持该参数）');
+  else if(r) toast('能连上，但没返回合法 JSON，已自动回退规则引擎');
+  else toast('连接失败：检查接口地址、模型名、Key，以及是否允许跨域');
 };
+
+/* 云端同步：只有填了 https 的自定义代理地址才可用，避免误把日记发到别处 */
+function syncBase(){
+  const u=(SETTINGS.url||'').trim().replace(/\/+$/,'');
+  if(!/^https:\/\//.test(u)) return '';
+  return u.replace(/\/v\d+$/,'')+'/api/sync';
+}
+async function cloudSync(mode){
+  const url=syncBase();
+  const btn=$(mode==='up'?'#cloudUp':'#cloudDown');
+  if(!url){toast('先在下面填接口地址，且必须是 https 开头');return}
+  if(!btn) return;
+  const old=btn.textContent; btn.disabled=true; btn.textContent=mode==='up'?'上传中…':'拉取中…';
+  const hd={'X-App-Token':SETTINGS.key||''};
+  try{
+    if(mode==='up'){
+      hd['Content-Type']='application/json';
+      const r=await fetch(url,{method:'PUT',headers:hd,body:JSON.stringify({entries:ENTRIES})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
+      SETTINGS.lastSync=Date.now(); saveSet();
+      toast('已上传 '+j.count+' 条');
+    }else{
+      const r=await fetch(url,{method:'GET',headers:hd});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
+      const remote=Array.isArray(j.entries)?j.entries:[];
+      const map=new Map();
+      ENTRIES.forEach(e=>map.set(e.id,e));
+      let add=0,upd=0;
+      remote.forEach(e=>{
+        if(!e||!e.id) return;
+        const has=map.get(e.id);
+        if(!has){map.set(e.id,e);add++}
+        else if((e.ts||0)>(has.ts||0)){map.set(e.id,e);upd++}
+      });
+      ENTRIES.length=0;
+      Array.from(map.values()).sort((a,b)=>(a.ts||0)-(b.ts||0)).forEach(e=>ENTRIES.push(e));
+      save(); renderAll();
+      toast(add||upd?('新增 '+add+' 条，更新 '+upd+' 条'):'云端和本地一样，没有变化');
+    }
+  }catch(e){
+    toast('同步失败：'+(e.message||e));
+  }finally{
+    btn.disabled=false; btn.textContent=old;
+  }
+}
+$('#cloudUp').onclick=()=>cloudSync('up');
+$('#cloudDown').onclick=()=>cloudSync('down');
 
 /* 导出 */
 function download(name,content,type){
