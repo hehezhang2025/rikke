@@ -124,6 +124,11 @@ header{
 .fchip:hover{background:var(--accent-soft);color:var(--accent-deep)}
 .item .del{position:absolute;top:9px;right:10px;font-size:11px;color:var(--text3);opacity:0;transition:.15s}
 .item:hover .del{opacity:1}
+.item .cp{position:absolute;top:9px;right:52px;font-size:11px;color:var(--text3);opacity:0;transition:.15s;
+  background:none;border:none;padding:0;font-family:inherit}
+.item:hover .cp{opacity:1}
+.item .cp:active{color:var(--accent-deep)}
+@media(hover:none){.item .del,.item .cp{opacity:.55}}
 .ml{-2} 
 .empty{text-align:center;padding:56px 20px;color:var(--text3)}
 .empty .ico{font-size:34px;margin-bottom:10px;opacity:.5}
@@ -352,20 +357,42 @@ nav{position:fixed;left:0;right:0;bottom:0;z-index:60;background:rgba(255,255,25
   </div>
 
   <div class="card" data-page-node-id="0IFOmBohp83uFJaHo1vUJo">
-    <div class="sec-title" data-page-node-id="C4omwWZktuPbabfOZZr714">导出</div>
-    <div class="row" style="margin-top:0" data-page-node-id="wbck8FVJJiHZRY2SQcQwkx">
-      <button class="btn ghost sm" id="expMd" data-page-node-id="Xv0RrFdDiSd3diG6cB5lxC">导出 Markdown</button>
-      <button class="btn ghost sm" id="expJson" data-page-node-id="GPqHqe01E3AUprxd85DH5J">备份 JSON</button>
+    <div class="sec-title" data-page-node-id="C4omwWZktuPbabfOZZr714">原始记录</div>
+    <div class="statgrid" style="margin:0 0 10px">
+      <div class="stat"><div class="k">条数</div><div class="v" id="rawN">0</div></div>
+      <div class="stat"><div class="k">字数</div><div class="v" id="rawC">0</div></div>
+      <div class="stat"><div class="k">最早</div><div class="v" id="rawFirst" style="font-size:15px">—</div></div>
+      <div class="stat"><div class="k">最新</div><div class="v" id="rawLast" style="font-size:15px">—</div></div>
     </div>
-    <div class="row" data-page-node-id="3oDW62NEUCCQfbCqVsTKL8">
-      <button class="btn ghost sm" id="impJson" data-page-node-id="TLj0UyDKac2DSwkIbae426">从备份恢复</button>
-      <button class="btn ghost sm" id="wipe" style="color:var(--warn)" data-page-node-id="bHjRnRt7r2f1Eg2FhWNYlf">清空全部数据</button>
+    <div class="row" style="margin-top:0">
+      <button class="btn ghost sm" id="rawPreview">预览全部原文</button>
+      <button class="btn ghost sm" id="rawCopy">复制全部原文</button>
     </div>
     <div class="row" style="margin-top:8px">
+      <button class="btn ghost sm" id="expTxt">导出 TXT</button>
+      <button class="btn ghost sm" id="expCsv">导出 CSV（Excel）</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn ghost sm" id="expJsonl">导出 JSONL（喂 AI）</button>
+      <button class="btn ghost sm" id="expMd" data-page-node-id="Xv0RrFdDiSd3diG6cB5lxC">导出 Markdown</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn ghost sm" id="expJson" data-page-node-id="GPqHqe01E3AUprxd85DH5J">备份 JSON</button>
+      <button class="btn ghost sm" id="impJson" data-page-node-id="TLj0UyDKac2DSwkIbae426">从备份恢复</button>
+    </div>
+    <div class="placeholder-hint" style="margin-top:10px">你说的每一句都一字不改地留着，分析字段只是附加在上面，永远不改写原文。TXT 是一行一条、CSV 能用 Excel 直接打开、JSONL 适合再喂给别的模型做二次分析。</div>
+  </div>
+
+  <div class="card" data-page-node-id="0IFOmBohp83uFJaHo1vUJo2">
+    <div class="sec-title">数据与同步</div>
+    <div class="row" style="margin-top:0">
       <button class="btn ghost sm" id="cloudUp">上传到云端</button>
       <button class="btn ghost sm" id="cloudDown">从云端拉取</button>
     </div>
-    <div class="placeholder-hint" style="margin-top:10px" data-page-node-id="55kZzUZvvBs7e9OC6zZu9p">数据默认只存在这台设备的浏览器里。上面两个按钮是可选的：如果你在下面「自定义」里填了自己的代理地址（https），就能让手机和电脑共用同一份记录。拉取按时间取新，不会互相覆盖。没配代理时点它会提示你先填地址。</div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn ghost sm" id="wipe" style="color:var(--warn)">清空全部数据</button>
+    </div>
+    <div class="placeholder-hint" style="margin-top:10px">数据默认只存在这台设备的浏览器里，换浏览器、清缓存都会丢。想让手机和电脑共用同一份记录，就在下面「自定义」里填自己的代理地址（https）。拉取按时间取新，不会互相覆盖；没配地址时点它会提示你先填。</div>
   </div>
 
   <div class="card" data-page-node-id="LrswTljD2kHNh89KATo76a">
@@ -977,6 +1004,7 @@ function renderTimeline(){
     byDay[d].forEach(e=>{
       const tm=new Date(e.ts);
       h+='<div class="item"><button class="del" data-del="'+e.id+'">删除</button>'+
+        '<button class="cp" data-cp="'+e.id+'">复制原文</button>'+
         '<div class="time">'+String(tm.getHours()).padStart(2,'0')+':'+String(tm.getMinutes()).padStart(2,'0')+
         (e.mood!==null?'<span class="moodbar" style="background:'+moodColor(e.mood)+'"></span>'+moodLabel(e.mood):'')+'</div>'+
         '<div class="txt">'+esc(e.text)+'</div>'+
@@ -996,6 +1024,12 @@ function renderTimeline(){
   $$('#timeline .fchip').forEach(c=>c.onclick=()=>{
     FILTER=FILTER===c.dataset.f?null:c.dataset.f;
     renderTimeline(); window.scrollTo({top:0,behavior:'smooth'});
+  });
+  $$('#timeline .cp').forEach(b=>b.onclick=async ev=>{
+    ev.stopPropagation();
+    const e=ENTRIES.find(x=>x.id===b.dataset.cp); if(!e) return;
+    const ok=await copyText(e.text);
+    toast(ok?'已复制原文':'复制失败');
   });
 }
 
@@ -1253,6 +1287,7 @@ function renderMe(){
   $('#mWeeks').textContent=Object.keys(WEEKS).length;
   renderWeekList();
   renderRemind();
+  renderRaw();
 }
 
 function renderAll(){renderHeader();renderToday();renderTimeline();renderWeek();renderMe();renderQuiz()}
@@ -1444,7 +1479,7 @@ async function finishQuiz(){
   if(!/[。！？.!?]$/.test(text)) text+='。';
 
   const entry=await buildEntry(text,[],ov,s=>{if(btn)btn.textContent=s});
-  entry.quiz=QUIZ.ans; save();
+  entry.quiz=QUIZ.ans; if(note) entry.note=note; save();
   QUIZ.done=true; QUIZ.ts=Date.now(); saveQuiz();
   renderQuiz(); refreshAfterEntry(entry);
   toast('今天的打卡记好了');
@@ -1498,6 +1533,7 @@ async function buildEntry(text,tags,quiz,onStatus){
   const local=composeReply(p,text);
   const entry={id:uid(),ts:Date.now(),date:todayStr(),text,...p,reply:local,ai:false};
   if(byAI) entry.byAI=true;
+  entry.src = quiz?'quiz':'text';        /* 记录来源：自己写的 / 选择题打卡拼的 */
   if(quiz) entry.quiz=quiz;
   if(SETTINGS.ai){
     if(onStatus) onStatus('模型中…');
@@ -1695,6 +1731,120 @@ $('#expMd').onclick=()=>{
   if(!ENTRIES.length){toast('还没有记录');return}
   download('日课记录_'+todayStr()+'.md',buildAllMd(),'text/markdown;charset=utf-8');
   toast('已导出 Markdown');
+};
+
+/* ---------- 原始记录：一字不改地留着，方便日后另作他用 ---------- */
+function sortedEntries(){ return ENTRIES.slice().sort((a,b)=>a.ts-b.ts) }
+function tsOf(e){
+  const d=new Date(e.ts);
+  const p=n=>String(n).padStart(2,'0');
+  return fmtD(d)+' '+p(d.getHours())+':'+p(d.getMinutes());
+}
+/* 纯文本：一行一条，日期 时间 | 原文 */
+function buildRawTxt(){
+  let s='# 日课 · 原始记录\n# 共 '+ENTRIES.length+' 条，导出于 '+new Date().toLocaleString('zh-CN')+'\n# 格式：日期 时间 | 来源 | 原文（原文未做任何改写）\n\n';
+  sortedEntries().forEach(e=>{
+    s+=tsOf(e)+' | '+(e.src==='quiz'?'打卡':'手记')+' | '+String(e.text).replace(/\s*\n+\s*/g,' ⏎ ')+'\n';
+  });
+  return s;
+}
+/* CSV：Excel 直接打开，原文单独一列 */
+function buildRawCsv(){
+  const q=v=>{
+    if(v===null||v===undefined) return '';
+    v=String(v).replace(/"/g,'""');
+    return /[",\n]/.test(v)?'"'+v+'"':v;
+  };
+  const head=['日期时间','来源','原文','情绪值','情绪','睡眠小时','睡眠质量','运动分钟','运动类型','压力源','饮食','类型标签','当时的回应'];
+  let s='\ufeff'+head.join(',')+'\n';   /* BOM，避免 Excel 打开中文乱码 */
+  sortedEntries().forEach(e=>{
+    const row=[
+      tsOf(e),
+      e.src==='quiz'?'打卡':'手记',
+      e.text,
+      (e.mood===null||e.mood===undefined)?'':e.mood,
+      e.mood===null||e.mood===undefined?'':moodLabel(e.mood),
+      (e.sleep&&e.sleep.hours!==null)?e.sleep.hours:'',
+      (e.sleep&&e.sleep.q!==null)?e.sleep.q:'',
+      (e.sport&&e.sport.dur)?e.sport.dur:'',
+      (e.sport&&e.sport.kinds)?e.sport.kinds.join('/'):'',
+      (e.stress&&e.stress.length)?e.stress.join('/'):'',
+      (e.food&&e.food.items)?e.food.items.join('/'):(typeof e.food==='string'?e.food:''),
+      (e.types||[]).join('/'),
+      e.reply||''
+    ];
+    s+=row.map(q).join(',')+'\n';
+  });
+  return s;
+}
+/* JSONL：一行一条 JSON，最适合再喂给别的模型做二次分析 */
+function buildRawJsonl(){
+  return sortedEntries().map(e=>JSON.stringify({
+    ts:e.ts, time:tsOf(e), src:e.src||'text', text:e.text,
+    mood:e.mood, sleep:e.sleep||null, sport:e.sport||null,
+    food:e.food||null, stress:e.stress||[], types:e.types||[],
+    reply:e.reply||null, byAI:!!e.byAI
+  })).join('\n')+'\n';
+}
+function copyText(t){
+  if(navigator.clipboard&&window.isSecureContext){
+    return navigator.clipboard.writeText(t).then(()=>true).catch(()=>fallbackCopy(t));
+  }
+  return Promise.resolve(fallbackCopy(t));
+}
+function fallbackCopy(t){
+  try{
+    const ta=document.createElement('textarea');
+    ta.value=t; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    const ok=document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  }catch(e){ return false }
+}
+function renderRaw(){
+  const n=ENTRIES.length;
+  $('#rawN').textContent=n;
+  $('#rawC').textContent=ENTRIES.reduce((a,e)=>a+String(e.text||'').length,0);
+  const s=sortedEntries();
+  $('#rawFirst').textContent=n?s[0].date.slice(5).replace('-','月')+'日':'—';
+  $('#rawLast').textContent=n?s[s.length-1].date.slice(5).replace('-','月')+'日':'—';
+}
+$('#expTxt').onclick=()=>{
+  if(!ENTRIES.length){toast('还没有记录');return}
+  download('日课原始记录_'+todayStr()+'.txt',buildRawTxt(),'text/plain;charset=utf-8');
+  toast('已导出 TXT');
+};
+$('#expCsv').onclick=()=>{
+  if(!ENTRIES.length){toast('还没有记录');return}
+  download('日课原始记录_'+todayStr()+'.csv',buildRawCsv(),'text/csv;charset=utf-8');
+  toast('已导出 CSV');
+};
+$('#expJsonl').onclick=()=>{
+  if(!ENTRIES.length){toast('还没有记录');return}
+  download('日课原始记录_'+todayStr()+'.jsonl',buildRawJsonl(),'application/x-ndjson;charset=utf-8');
+  toast('已导出 JSONL');
+};
+$('#rawCopy').onclick=async()=>{
+  if(!ENTRIES.length){toast('还没有记录');return}
+  const ok=await copyText(buildRawTxt());
+  toast(ok?'已复制全部原文到剪贴板':'复制失败，请改用「导出 TXT」');
+};
+$('#rawPreview').onclick=()=>{
+  if(!ENTRIES.length){toast('还没有记录');return}
+  const w=window.open('','_blank');
+  if(!w){toast('浏览器拦了弹窗，请改用「复制全部原文」');return}
+  const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  w.document.write('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+    +'<title>日课 · 原始记录</title><style>body{font:15px/1.75 -apple-system,"PingFang SC",sans-serif;'
+    +'max-width:720px;margin:0 auto;padding:22px 18px;color:#1a1a1a;background:#faf9f7}'
+    +'.h{font-size:13px;color:#8a8175;border-bottom:1px solid #e6e1d8;padding-bottom:10px;margin-bottom:18px}'
+    +'.e{padding:10px 0;border-bottom:1px solid #f0ece4}.t{font-size:12px;color:#a0988a;margin-bottom:3px}'
+    +'.x{white-space:pre-wrap;word-break:break-word}</style>'
+    +'<div class="h">日课 · 原始记录 · 共 '+ENTRIES.length+' 条 · '+new Date().toLocaleString('zh-CN')+'</div>'
+    + sortedEntries().map(e=>'<div class="e"><div class="t">'+esc(tsOf(e))+' · '+(e.src==='quiz'?'打卡':'手记')
+    +'</div><div class="x">'+esc(e.text)+'</div></div>').join(''));
+  w.document.close();
 };
 
 /* ---------- 备份到邮箱 ---------- */
